@@ -77,5 +77,24 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 数据服务批量查询入口
+
+数据服务支持运营一次提交多份查询请求，合并为一个**查询批次回执**：
+
+- `POST /api/domain/data_service/batch-query`：批量提交。每项请求独立执行，
+  回执记录该项实际读取的指标、字段与范围供调用者核对；失败项只记录失败原因，
+  行数置空，失败不会冒充返回零行。
+- `GET /api/domain/data_service/batch-query/{receipt_no}`：按回执号查询，
+  每项给出可独立领取的结果或等待说明。
+- `POST /api/domain/data_service/batch-query/{receipt_no}/claim/{request_id}`：
+  签收并领取单项结果。部分返回期间只交付该请求允许读的字段；结果只交付一次，
+  已签收的查询不能发起第二次读取。
+- 同一 `batch_key` 重复提交时，已完成/已签收的请求项保留原执行结果不再读取，
+  仅为未成功的请求项重试；每次实际执行都写入查询日志并按批次回执号关联，
+  日志只记录该次实际使用的范围，供后续对账。
+- `GET/POST /api/domain/data_service/upstream-stubs`：查看/设置模拟上游行为
+  （`ok`/`timeout`/`error`），用于演示部分失败与恢复重提场景。默认支付对账
+  接口正常返回 8 行、退款对账接口超时。
+
 领域：数据工程
 子方向：数据分析与数据应用

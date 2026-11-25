@@ -5,9 +5,18 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from app.schemas import BatchQueryPayload, UpstreamStubPayload
 from app.services import SERVICES
 
 router = APIRouter(prefix="/api/domain", tags=["领域业务"])
+
+
+def _data_service_svc():
+    from app.services.data_service import DataServiceService
+    svc = SERVICES.get("data_service")
+    if not svc or not isinstance(svc, DataServiceService):
+        raise HTTPException(404, "数据服务不可用")
+    return svc
 
 
 @router.get("/metric_def/{metric_id}/compute")
@@ -60,13 +69,54 @@ def cohort_estimate(cohort_id: int) -> dict[str, Any]:
     return svc.estimate_scale(cohort_id)
 
 
+@router.post("/data_service/batch-query")
+def data_service_batch_query(payload: BatchQueryPayload) -> dict[str, Any]:
+    """数据服务批量查询入口：把多份查询请求合并为一个查询批次回执。
+
+    同一 batch_key 重复提交时，已完成/已签收的请求项保留原执行结果，
+    仅为未成功的请求项发起新一轮读取。
+    """
+    return _data_service_svc().submit_batch(payload.model_dump())
+
+
+@router.get("/data_service/batch-query/{receipt_no}")
+def data_service_batch_receipt(receipt_no: str) -> dict[str, Any]:
+    """按回执号查询批次回执：每项给出实际读取范围、可领取结果或等待说明。"""
+    svc = _data_service_svc()
+    receipt = svc.get_receipt(receipt_no)
+    if receipt is None:
+        raise HTTPException(404, f"查询批次回执 {receipt_no} 不存在")
+    return {"ok": True, "receipt": receipt}
+
+
+@router.post("/data_service/batch-query/{receipt_no}/claim/{request_id}")
+def data_service_batch_claim(receipt_no: str, request_id: str) -> dict[str, Any]:
+    """签收并领取单个请求项的结果；已签收的查询不能发起第二次读取。"""
+    svc = _data_service_svc()
+    result = svc.claim_item(receipt_no, request_id)
+    if not result.get("found", True):
+        raise HTTPException(404, result["message"])
+    result.pop("found", None)
+    return result
+
+
+@router.get("/data_service/upstream-stubs")
+def data_service_upstream_stubs() -> dict[str, Any]:
+    """查看模拟上游接口行为（演示部分失败与恢复场景）。"""
+    return _data_service_svc().list_upstream_behaviors()
+
+
+@router.post("/data_service/upstream-stubs")
+def data_service_set_upstream_stub(payload: UpstreamStubPayload) -> dict[str, Any]:
+    """设置某个接口路径的模拟上游行为：ok / timeout / error。"""
+    return _data_service_svc().set_upstream_behavior(
+        payload.path, payload.model_dump(exclude={"path"}))
+
+
 @router.get("/data_service/{service_id}/invoke")
 def data_service_invoke(service_id: int) -> dict[str, Any]:
     """数据服务接口调用。"""
-    from app.services.data_service import DataServiceService
-    svc = SERVICES.get("data_service")
-    if not svc or not isinstance(svc, DataServiceService):
-        raise HTTPException(404, "数据服务不可用")
+    svc = _data_service_svc()
     return svc.invoke_service(service_id)
 
 

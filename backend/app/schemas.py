@@ -29,3 +29,30 @@ class EntryPayload(BaseModel):
 class ActionPayload(BaseModel):
     action: str
     remark: str | None = None
+
+
+class BatchQueryItemPayload(BaseModel):
+    """批量查询中的单份数据服务查询请求。"""
+
+    request_id: str | None = None
+    service_id: int | None = None
+    path: str | None = None
+    fields: list[str] | None = None
+    scope: dict[str, Any] = Field(default_factory=dict)
+
+
+class BatchQueryPayload(BaseModel):
+    """批量查询提交：多份请求合并为一个查询批次回执。"""
+
+    batch_key: str | None = None
+    submitted_by: str = "ops"
+    requests: list[BatchQueryItemPayload] = Field(default_factory=list)
+
+
+class UpstreamStubPayload(BaseModel):
+    """模拟上游接口行为：ok 返回固定行、timeout/error 模拟失败。"""
+
+    path: str
+    mode: str = "ok"
+    rows: list[dict[str, Any]] | None = None
+    message: str | None = None
